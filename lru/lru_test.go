@@ -309,3 +309,70 @@ func TestEvict_ItemNotExists(t *testing.T) {
 		t.Fail()
 	}
 }
+
+func TestEvictIf(t *testing.T) {
+	cache, _ := New(100, nil, nil)
+
+	cache.Put("test1", &LRUItem{Value: "test", Size: 10})
+	cache.Put("test2", &LRUItem{Value: "test", Size: 10})
+	cache.Put("test3", &LRUItem{Value: "test", Size: 10})
+
+	cache.EvictIf(func(key interface{}) bool {
+		return key == "test2"
+	})
+
+	if !cache.Has("test1") {
+		t.Fail()
+	}
+	if cache.Has("test2") {
+		t.Fail()
+	}
+	if !cache.Has("test3") {
+		t.Fail()
+	}
+
+}
+
+func TestEvictIf_AllElements(t *testing.T) {
+	cache, _ := New(100, nil, nil)
+
+	cache.Put("test1", &LRUItem{Value: "test", Size: 10})
+	cache.Put("test2", &LRUItem{Value: "test", Size: 10})
+	cache.Put("test3", &LRUItem{Value: "test", Size: 10})
+
+	cache.EvictIf(func(key interface{}) bool {
+		return true
+	})
+
+	if cache.Has("test1") {
+		t.Fail()
+	}
+	if cache.Has("test2") {
+		t.Fail()
+	}
+	if cache.Has("test3") {
+		t.Fail()
+	}
+}
+
+func TestEvictIf_NoElements(t *testing.T) {
+	cache, _ := New(100, nil, nil)
+
+	cache.Put("test1", &LRUItem{Value: "test", Size: 10})
+	cache.Put("test2", &LRUItem{Value: "test", Size: 10})
+	cache.Put("test3", &LRUItem{Value: "test", Size: 10})
+
+	cache.EvictIf(func(key interface{}) bool {
+		return false
+	})
+
+	if !cache.Has("test1") {
+		t.Fail()
+	}
+	if !cache.Has("test2") {
+		t.Fail()
+	}
+	if !cache.Has("test3") {
+		t.Fail()
+	}
+}

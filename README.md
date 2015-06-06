@@ -51,6 +51,16 @@ the element to be removed @return {*LRUItem} - if an element with the specified
 key is found and removed, then the return value is the deleted element.
 Otherwise, nil is returned.
 
+#### func (*LRUCache) EvictIf
+
+```go
+func (cache *LRUCache) EvictIf(predicate func(interface{}) bool) *LRUItem
+```
+Evict removes an element from the cache. @param {interface{}} key - the key of
+the element to be removed @return {*LRUItem} - if an element with the specified
+key is found and removed, then the return value is the deleted element.
+Otherwise, nil is returned.
+
 #### func (*LRUCache) Get
 
 ```go
