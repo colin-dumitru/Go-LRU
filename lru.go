@@ -29,7 +29,9 @@ type LRUCache struct {
 	items map[interface{}]*LRUItem
 
 	// In case of cache-mises, this producer will create the item to be stored in the cache
-	producer func(key interface{}) *LRUItem
+	producer func(interface{}) *LRUItem
+	// Callback when an item is evicted from the cache
+	onevict func(interface{}, *LRUItem)
 
 	// Mutex used to synchronise cache operations
 	rwlock sync.RWMutex
@@ -54,11 +56,12 @@ type LRUItem struct {
 /**
  * Creates a new LRW cache
  * @param {maxSize} - the maximum size of this cache
- * @param {producer} - a callback function which gets invoked on cache misses. The
+ * @param {producer} - optional callback function which gets invoked on cache misses. The
  * 	result of this callback is stored in the cache for the key which was missing.
  * 	Can be null, in which case all cache misses will return null
+ * @param {onevict} - optional function which will get called when an item is evicted from the cache
  */
-func New(maxSize int, producer func(key interface{}) *LRUItem) (*LRUCache, error) {
+func New(maxSize int, producer func(key interface{}) *LRUItem, onevict func(interface{}, *LRUItem)) (*LRUCache, error) {
 	if maxSize <= 0 {
 		return nil, errors.New("Cache size must be greater than 0")
 	}
@@ -71,6 +74,7 @@ func New(maxSize int, producer func(key interface{}) *LRUItem) (*LRUCache, error
 		items:        make(map[interface{}]*LRUItem),
 
 		producer: producer,
+		onevict:  onevict,
 	}
 	return cache, nil
 }
@@ -135,8 +139,32 @@ func (cache *LRUCache) evictElement(element *LRUItem) {
 
 	delete(cache.items, *element.elementKey)
 	cache.orderedItems.Remove(element.elementListItem)
+
+	if cache.onevict != nil {
+		cache.onevict(*element.elementKey, element)
+	}
 }
 
+/**
+ * Evicts elements from the cache until the specified empty space is made. Ff the
+ * cache already has enough empty space, then no elements are evicted.
+ * @param  {int} size - how much empty space should be ensured
+ */
+func (cache *LRUCache) MakeRoom(size int) {
+	cache.rwlock.Lock()
+	defer cache.rwlock.Unlock()
+
+	cache.maxSize -= size
+	cache.evictAsNeeded()
+	cache.maxSize += size
+}
+
+/**
+ * Adds a new element to the cache. If an item with the same key already exists,
+ * then the operation fails and an error is returned.
+ * @param {interface{}} key - the key for the new cached item
+ * @param {*LRUItem} element - the element to be inserted
+ */
 func (cache *LRUCache) Put(key interface{}, element *LRUItem) error {
 	cache.rwlock.Lock()
 	defer cache.rwlock.Unlock()
@@ -148,6 +176,43 @@ func (cache *LRUCache) Put(key interface{}, element *LRUItem) error {
 	return nil
 }
 
+/**
+ * Adds a new element to the cache. If an item with the same key already exists,
+ * then it is evicted and replaced with the given element.
+ * @param {interface{}} key - the key for the new cached item
+ * @param {*LRUItem} element - the element to be inserted
+ */
+func (cache *LRUCache) Replace(key interface{}, element *LRUItem) error {
+	cache.rwlock.Lock()
+	defer cache.rwlock.Unlock()
+
+	if item, ok := cache.items[key]; ok {
+		cache.evictElement(item)
+	}
+	cache.putItem(&key, element)
+	return nil
+}
+
+/**
+ * Removes an element from the cache.
+ * @param {interface{}} key - the key of the element to be removed
+ * @return {*LRUItem} - if an element with the specified key is found and removed, then the return
+ * value is the deleted element. Otherwise, nil is returned.
+ */
+func (cache *LRUCache) Evict(key interface{}) *LRUItem {
+	cache.rwlock.Lock()
+	defer cache.rwlock.Unlock()
+
+	if item, ok := cache.items[key]; ok {
+		cache.evictElement(item)
+		return item
+	}
+	return nil
+}
+
+/**
+ * @return {int} the remaining empty space within the cache.
+ */
 func (cache *LRUCache) EmptySpace() int {
 	cache.rwlock.RLock()
 	defer cache.rwlock.RUnlock()
@@ -155,6 +220,21 @@ func (cache *LRUCache) EmptySpace() int {
 	return cache.maxSize - cache.currentSize
 }
 
+/**
+ * @return {int} the maximum size this cache can hold.
+ */
+func (cache *LRUCache) MaxSize() int {
+	cache.rwlock.RLock()
+	defer cache.rwlock.RUnlock()
+
+	return cache.maxSize
+}
+
+/**
+ * Checks if an element with the specified key exists within the cache
+ * @param {interface{}} key - the key of the element
+ * @return {bool} - if an item with the specified key exists
+ */
 func (cache *LRUCache) Has(key interface{}) bool {
 	cache.rwlock.RLock()
 	defer cache.rwlock.RUnlock()

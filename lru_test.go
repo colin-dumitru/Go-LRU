@@ -5,7 +5,7 @@ import (
 )
 
 func TestEmptyCache(t *testing.T) {
-	cache, _ := New(128, nil)
+	cache, _ := New(128, nil, nil)
 
 	if cache.EmptySpace() != 128 {
 		t.Fail()
@@ -13,7 +13,7 @@ func TestEmptyCache(t *testing.T) {
 }
 
 func TestBasicTest_NoProducer(t *testing.T) {
-	cache, _ := New(128, nil)
+	cache, _ := New(128, nil, nil)
 
 	elem := cache.Get("test")
 
@@ -31,7 +31,7 @@ func TestBasicTest_Producer(t *testing.T) {
 			}
 		}
 		return nil
-	})
+	}, nil)
 
 	elem := cache.Get("test")
 
@@ -55,7 +55,7 @@ func TestBasicTest_Eviction(t *testing.T) {
 			Value: key,
 			Size:  50,
 		}
-	})
+	}, nil)
 
 	cache.Get("test1")
 	cache.Get("test2")
@@ -78,7 +78,7 @@ func TestBasicTest_Eviction2(t *testing.T) {
 			Value: key,
 			Size:  50,
 		}
-	})
+	}, nil)
 
 	cache.Get("test1")
 	cache.Get("test2")
@@ -97,7 +97,7 @@ func TestBasicTest_Eviction2(t *testing.T) {
 }
 
 func TestBasicTest_PutAndEviction(t *testing.T) {
-	cache, _ := New(128, nil)
+	cache, _ := New(128, nil, nil)
 
 	if cache.Get("test1") != nil {
 		t.Fail()
@@ -137,7 +137,7 @@ func TestBasicTest_PutAndEviction(t *testing.T) {
 }
 
 func TestBasicTest_Has(t *testing.T) {
-	cache, _ := New(128, nil)
+	cache, _ := New(128, nil, nil)
 
 	if cache.Has("test1") {
 		t.Fail()
@@ -149,6 +149,163 @@ func TestBasicTest_Has(t *testing.T) {
 	})
 
 	if !cache.Has("test1") {
+		t.Fail()
+	}
+}
+
+func TestOnEvictHandler(t *testing.T) {
+	itemsEvicted := ""
+
+	cache, _ := New(128, nil, func(key interface{}, item *LRUItem) {
+		itemsEvicted += key.(string)
+	})
+
+	cache.Put("test1", &LRUItem{
+		Value: "test1",
+		Size:  50,
+	})
+	cache.Put("test2", &LRUItem{
+		Value: "test2",
+		Size:  50,
+	})
+
+	if itemsEvicted != "" {
+		t.Fail()
+	}
+	cache.Put("test3", &LRUItem{
+		Value: "test3",
+		Size:  100,
+	})
+	if itemsEvicted != "test1test2" {
+		t.Fail()
+	}
+}
+
+func TestMakeRoom(t *testing.T) {
+	itemsEvicted := ""
+
+	cache, _ := New(160, nil, func(key interface{}, item *LRUItem) {
+		itemsEvicted += key.(string)
+	})
+
+	cache.Put("test1", &LRUItem{
+		Value: "test1",
+		Size:  50,
+	})
+	cache.Put("test2", &LRUItem{
+		Value: "test2",
+		Size:  50,
+	})
+
+	if itemsEvicted != "" {
+		t.Fail()
+	}
+
+	cache.MakeRoom(100)
+
+	if itemsEvicted != "test1" {
+		t.Fail()
+	}
+	if cache.EmptySpace() != 110 {
+		t.Fail()
+	}
+
+	cache.Put("test3", &LRUItem{
+		Value: "test3",
+		Size:  100,
+	})
+	if itemsEvicted != "test1" {
+		t.Fail()
+	}
+}
+
+func TestPut_ItemExists(t *testing.T) {
+	cache, _ := New(100, nil, nil)
+
+	cache.Put("test1", &LRUItem{
+		Value: "test1",
+		Size:  50,
+	})
+	error := cache.Put("test1", &LRUItem{
+		Value: "test2",
+		Size:  50,
+	})
+
+	if error == nil {
+		t.Fail()
+	}
+
+	item := cache.Get("test1")
+
+	if item.Value != "test1" {
+		t.Fail()
+	}
+}
+
+func TestReplace_ItemExists(t *testing.T) {
+	cache, _ := New(100, nil, nil)
+
+	cache.Put("test1", &LRUItem{
+		Value: "test1",
+		Size:  50,
+	})
+	cache.Replace("test1", &LRUItem{
+		Value: "test2",
+		Size:  50,
+	})
+
+	item := cache.Get("test1")
+
+	if item.Value != "test2" {
+		t.Fail()
+	}
+}
+
+func TestReplace_ItemNotExists(t *testing.T) {
+	cache, _ := New(100, nil, nil)
+
+	cache.Replace("test1", &LRUItem{
+		Value: "test1",
+		Size:  50,
+	})
+	cache.Replace("test2", &LRUItem{
+		Value: "test2",
+		Size:  50,
+	})
+
+	item := cache.Get("test2")
+
+	if item.Value != "test2" {
+		t.Fail()
+	}
+}
+
+func TestEvict_ItemExists(t *testing.T) {
+	cache, _ := New(100, nil, nil)
+
+	cache.Replace("test1", &LRUItem{
+		Value: "test1",
+		Size:  50,
+	})
+	evicted := cache.Evict("test1")
+
+	if evicted == nil {
+		t.Fail()
+	}
+
+	item := cache.Get("test1")
+
+	if item != nil {
+		t.Fail()
+	}
+}
+
+func TestEvict_ItemNotExists(t *testing.T) {
+	cache, _ := New(100, nil, nil)
+
+	evicted := cache.Evict("test1")
+
+	if evicted != nil {
 		t.Fail()
 	}
 }
